@@ -127,7 +127,7 @@ namespace PF
         {
             foreach (var particle in states)
             {
-                image.Draw(new CircleF(new PointF(particle.xt, particle.yt), 1), new Bgr(Color.Green), -1);
+                image.Draw(new CircleF(new PointF(particle.xt, particle.yt), 5), new Bgr(Color.Green), -1);
             }
         }
 

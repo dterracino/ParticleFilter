@@ -37,9 +37,9 @@
             // 
             // pbxVideo
             // 
-            this.pbxVideo.Location = new System.Drawing.Point(12, 12);
+            this.pbxVideo.Location = new System.Drawing.Point(12, 21);
             this.pbxVideo.Name = "pbxVideo";
-            this.pbxVideo.Size = new System.Drawing.Size(678, 522);
+            this.pbxVideo.Size = new System.Drawing.Size(678, 513);
             this.pbxVideo.SizeMode = System.Windows.Forms.PictureBoxSizeMode.StretchImage;
             this.pbxVideo.TabIndex = 0;
             this.pbxVideo.TabStop = false;

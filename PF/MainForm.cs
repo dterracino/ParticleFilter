@@ -41,7 +41,7 @@ namespace PF
             OpenFileDialog fDialog = new OpenFileDialog();
             fDialog.CheckFileExists = true;
             fDialog.InitialDirectory = @"F:\车辆";
-            fDialog.Filter = "avi文件|*.avi|MP4文件|*.mp4";
+            fDialog.Filter = "MP4文件|*.mp4|avi文件|*.avi";
             fDialog.Multiselect = false;
             if (fDialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
             {
@@ -54,21 +54,24 @@ namespace PF
                     //cap.ImageGrabbed -= cap_ImageGrabbed;
                     track = false;
                 }
+                
                 cap = new Capture(fDialog.FileName);
                 //cap.ImageGrabbed += cap_ImageGrabbed;
                 width = (int)CvInvoke.cvGetCaptureProperty(cap, Emgu.CV.CvEnum.CAP_PROP.CV_CAP_PROP_FRAME_WIDTH);
                 height = (int)CvInvoke.cvGetCaptureProperty(cap, Emgu.CV.CvEnum.CAP_PROP.CV_CAP_PROP_FRAME_HEIGHT);
+                var fps = (int)CvInvoke.cvGetCaptureProperty(cap, Emgu.CV.CvEnum.CAP_PROP.CV_CAP_PROP_FPS);
                 //cap.Start();
                 thread = new Thread(() =>
                 {
                     while (true)
                     {
-                        Thread.Sleep(30);
+                        Thread.Sleep(1);
                         if (pause)
                             continue;
 
                         // 循环读入视频并使用粒子滤波跟踪
-                        currentFrame = cap.QueryFrame();
+                        if ((currentFrame = cap.QueryFrame()) == null) break;
+
 
                         int rho_v;
                         int xc, yc, wh_x, hy_h;
@@ -79,12 +82,14 @@ namespace PF
                             rho_v = pf.ColorParticleTracking(currentFrame, out xc, out yc, out wh_x, out hy_h, out max_weight);
                             if (rho_v > 0 && max_weight > 0.0001)  /* 判断是否目标丢失 */
                             {
-                                // draw
-                                currentFrame.Draw(new Rectangle(xc - wh_x, yc - hy_h, wh_x * 2, hy_h * 2), new Bgr(Color.Blue), 3);
+                                // draw blue
+                                currentFrame.Draw(new Rectangle(xc - wh_x, yc - hy_h, wh_x * 2, hy_h * 2), new Bgr(Color.Blue), 5);
                                 lostCount = 0;
                             }
                             else
                             {
+                                // draw blue
+                                currentFrame.Draw(new Rectangle(xc - wh_x, yc - hy_h, wh_x * 2, hy_h * 2), new Bgr(Color.Red), 5);
                                 lostCount++;
                                 if (lostCount >= MAX_COUNT)
                                 {
@@ -93,7 +98,6 @@ namespace PF
                                 }
                             }
                         }
-
                         this.Invoke(new Action(() =>
                         {
                             pbxVideo.Image = currentFrame.ToBitmap();
