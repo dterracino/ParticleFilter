@@ -50,17 +50,13 @@ namespace PF
                 {
                     thread.Abort();
                     thread = null;
-                    //cap.Stop();
-                    //cap.ImageGrabbed -= cap_ImageGrabbed;
                     track = false;
                 }
                 
                 cap = new Capture(fDialog.FileName);
-                //cap.ImageGrabbed += cap_ImageGrabbed;
                 width = (int)CvInvoke.cvGetCaptureProperty(cap, Emgu.CV.CvEnum.CAP_PROP.CV_CAP_PROP_FRAME_WIDTH);
                 height = (int)CvInvoke.cvGetCaptureProperty(cap, Emgu.CV.CvEnum.CAP_PROP.CV_CAP_PROP_FRAME_HEIGHT);
                 var fps = (int)CvInvoke.cvGetCaptureProperty(cap, Emgu.CV.CvEnum.CAP_PROP.CV_CAP_PROP_FPS);
-                //cap.Start();
                 thread = new Thread(() =>
                 {
                     while (true)
