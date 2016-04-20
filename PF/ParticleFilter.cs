@@ -40,6 +40,7 @@ namespace PF
         const double Pi_Thres = 0.9;                /* 权重阈值 */
         const double ALPHA_COEFFICIENT = 0.2;       /* 目标模型更新权重取0.1-0.3 */
         const double RECIP_SIGMA = 3.9894228040;    /* 1/(sqrt(2*pi)*sigma), 这里sigma = 0.1*/
+        const int EOH_M = 4;                        /* eoh bins 的个数 */
 
         /* 粒子滤波相关变量 */
         int particleNum;            /* 粒子数 */
@@ -47,11 +48,13 @@ namespace PF
         double[] weights;           /* 例子权重 */
         double[] modelHist;         /* 模型直方图 */
         Util randUtil;              /* 系统随机函数 */
+        Feature feature;
 
         public ParticleFilter(int particleNumbers)
         {
             particleNum = particleNumbers;
             randUtil = new Util(0L);
+            feature = new ColorDistribution();
         }
 
         public int Initialize(int x0, int y0, int wx, int hy, Image<Bgr, byte> image)
@@ -61,10 +64,15 @@ namespace PF
             states = new SpaceState[particleNum];   /* 申请状态数组的空间 */
 
             weights = new double[particleNum];       /* 申请粒子权重数组的空间 */
-            modelHist = new double[BIN_NUM];         /* 申请直方图内存 */  
-  
+            modelHist = new double[BIN_NUM];         /* 申请直方图内存 */
+
+            /* 此处尝试使用HAAR+EOH的特征，使用积分图计算，加快速度 */
+            /* 1.计算haar积分图 */
+
+            feature.Initialize(image, x0, y0, wx, hy);
             /* 计算目标模板直方图 */
-            CalcColorHistogram(x0, y0, wx, hy, image, modelHist);  
+            //CalcColorHistogram(x0, y0, wx, hy, image, modelHist);
+            
             /* 初始化粒子状态(以(x0,y0,1,1,Wx,Hy,0.1)为中心呈N(0,0.6)正态分布) */
             states[0].xt = x0;  
             states[0].yt = y0;  
@@ -131,31 +139,81 @@ namespace PF
             }
         }
 
-        private int ModelUpdate(ref SpaceState estState, double PiT, Image<Bgr, byte> image)  
+        
+
+        private void CalcHaarIntegralImageSingle(Image<Gray, byte> image, int x0, int y0, int x1, int y1, int wx, int hy, out ulong[] integralImage)
         {
-            double[] estHist;
-            double rho, Pi_E;  
-            int rvalue = -1;
+            integralImage = null;
+            /* 计算实际高宽和区域起始点 */
+            int x_begin = x0 - wx;
+            int y_begin = y0 - hy;
+            if (x_begin < 0) x_begin = 0;
+            if (y_begin < 0) y_begin = 0;
+            int x_end = x1 + wx;
+            int y_end = y1 + hy;
+            if (x_end >= image.Width) x_end = image.Width - 1;
+            if (y_end >= image.Height) y_end = image.Height - 1;
+            int width = x_end - x_begin;
+            int height = y_end - y_begin;
+            if (width <= 0 || height <= 0) return;
+            /* 取出实际需要计算的子图 */
+            var subImage = image.GetSubRect(new Rectangle(x_begin, y_begin, width, height));
 
-            estHist = new double[BIN_NUM]; 
-  
-            /* (1)在估计值处计算目标直方图 */  
-            CalcColorHistogram(estState.xt, estState.yt, estState.Hxt, estState.Hyt, image, estHist);  
-            /* (2)计算Bhattacharyya系数 */  
-            rho = CalcBhattacharyya(estHist, modelHist);  
-            /* (3)计算概率权重 */  
-            Pi_E = CalcWeightedPi(rho);  
-
-            if (Pi_E > PiT)
-            {  
-                for (int i = 0; i < BIN_NUM; i++)  
+            integralImage = new ulong[width * height];
+            ulong[] columnSum = new ulong[width];
+            int offset;
+            // calculate first line
+            for (int x = 0; x < width; ++x)
+            {
+                columnSum[x] = (ulong)image[0, x].Intensity;
+                integralImage[x] = (ulong)image[0, x].Intensity;
+                if (x > 0)
                 {
-                    modelHist[i] = ((1.0 - ALPHA_COEFFICIENT) * modelHist[i] + ALPHA_COEFFICIENT * estHist[i]);  
-                }  
-                rvalue = 1;  
+                    integralImage[x] += integralImage[x - 1];
+                }
             }
 
-            return (rvalue);  
+            for (int y = 1; y < height; ++y)
+            {
+                offset = y * width;
+                // first column of each line
+                columnSum[0] += (ulong)image[y, 0].Intensity;
+                integralImage[offset] = columnSum[0];
+                // other columns
+                for (int x = 1; x < width; ++x)
+                {
+                    columnSum[x] += (ulong)image[y, x].Intensity;
+                    integralImage[offset + x] = integralImage[offset + x - 1] + columnSum[x];
+                }
+            }
+        }
+
+        private int ModelUpdate(ref SpaceState estState, double PiT, Image<Bgr, byte> image)  
+        {
+            return feature.ModelUpdate(image, estState);
+            //double[] estHist;
+            //double rho, Pi_E;  
+            //int rvalue = -1;
+
+            //estHist = new double[BIN_NUM]; 
+  
+            ///* (1)在估计值处计算目标直方图 */  
+            //CalcColorHistogram(estState.xt, estState.yt, estState.Hxt, estState.Hyt, image, estHist);  
+            ///* (2)计算Bhattacharyya系数 */  
+            //rho = CalcBhattacharyya(estHist, modelHist);  
+            ///* (3)计算概率权重 */  
+            //Pi_E = CalcWeightedPi(rho);  
+
+            //if (Pi_E > PiT)
+            //{  
+            //    for (int i = 0; i < BIN_NUM; i++)  
+            //    {
+            //        modelHist[i] = ((1.0 - ALPHA_COEFFICIENT) * modelHist[i] + ALPHA_COEFFICIENT * estHist[i]);  
+            //    }  
+            //    rvalue = 1;  
+            //}
+
+            //return (rvalue);  
         }
 
         private void Estimation(out SpaceState estimateState)  
@@ -197,34 +255,12 @@ namespace PF
 
         private void Observe(Image<Bgr, byte> image)
         {
-            //double[] colorHist = new double[BIN_NUM];
-            //double rho = 0.0;
-
-            // 改为并行计算，提高效率
-            Parallel.For(0, particleNum, (i) =>
-            {
-                double[] colorHist = new double[BIN_NUM];
-                double rho = 0.0;
-                /* (1) 计算彩色直方图分布 */
-                CalcColorHistogram(states[i].xt, states[i].yt, states[i].Hxt, states[i].Hyt, image, colorHist);
-                /* (2) Bhattacharyya系数 */
-                rho = CalcBhattacharyya(colorHist, modelHist);
-                /* (3) 根据计算得的Bhattacharyya系数计算各个权重值 */
-                weights[i] = CalcWeightedPi(rho);
-            });
-
+            feature.CalcWeights(image, states, weights);
+            /* normalize weights */
             var sum = weights.Sum();
             for (int i = 0; i < particleNum; ++i)
                 weights[i] /= sum;
-            //for (int i = 0; i < particleNum; i++)
-            //{
-            //    /* (1) 计算彩色直方图分布 */
-            //    CalcColorHistogram(states[i].xt, states[i].yt, states[i].Hxt, states[i].Hyt, image, colorHist);
-            //    /* (2) Bhattacharyya系数 */
-            //    rho = CalcBhattacharyya(colorHist, modelHist);
-            //    /* (3) 根据计算得的Bhattacharyya系数计算各个权重值 */
-            //    weights[i] = CalcWeightedPi(rho);
-            //}
+
             return;
         }
 

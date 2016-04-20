@@ -54,6 +54,10 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ColorDistribution.cs" />
+    <Compile Include="EOH.cs" />
+    <Compile Include="Feature.cs" />
+    <Compile Include="Haar.cs" />
     <Compile Include="MainForm.cs">
       <SubType>Form</SubType>
     </Compile>
