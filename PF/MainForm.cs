@@ -79,13 +79,13 @@ namespace PF
                             if (rho_v > 0 && max_weight > 0.0001)  /* 判断是否目标丢失 */
                             {
                                 // draw blue
-                                currentFrame.Draw(new Rectangle(xc - wh_x, yc - hy_h, wh_x * 2, hy_h * 2), new Bgr(Color.Blue), 5);
+                                currentFrame.Draw(new Rectangle(xc - wh_x, yc - hy_h, wh_x * 2, hy_h * 2), new Bgr(Color.Blue), 1);
                                 lostCount = 0;
                             }
                             else
                             {
                                 // draw blue
-                                currentFrame.Draw(new Rectangle(xc - wh_x, yc - hy_h, wh_x * 2, hy_h * 2), new Bgr(Color.Red), 5);
+                                currentFrame.Draw(new Rectangle(xc - wh_x, yc - hy_h, wh_x * 2, hy_h * 2), new Bgr(Color.Red), 1);
                                 lostCount++;
                                 if (lostCount >= MAX_COUNT)
                                 {

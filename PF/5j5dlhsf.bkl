@@ -1,0 +1,144 @@
+﻿using Emgu.CV;
+using Emgu.CV.Structure;
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace PF
+{
+    class EOH:Feature
+    {
+        const int BIN_NUM = 4;     /* 梯度区间个数 */
+
+        double[] targetModel;
+        Image<Gray, double>[] integralImages;
+
+        public override void Initialize(Image<Bgr, byte> image, int x0, int y0, int wx, int hy)
+        {
+            targetModel = new double[BIN_NUM];
+            /* 计算积分图 */
+            CalcEOHIntegralImage(image, x0, y0, x0, y0, out integralImages);
+            CalcModel(integralImages, x0, y0, wx, hy, targetModel);
+        }
+
+        public override void CalcWeights(Image<Bgr, byte> image, SpaceState[] states, double[] weights)
+        {
+            /* 计算上下左右四个点 */
+            int minX = int.MaxValue, 
+                minY = int.MaxValue, 
+                maxX = int.MinValue, 
+                maxY = int.MinValue;
+            int value;
+            foreach (var state in states)
+            {
+                if ((value = state.xt - state.Hxt) < minX) minX = value;
+                if ((value = state.yt - state.Hyt) < minY) minY = value;
+                if ((value = state.xt + state.Hxt) > maxX) maxX = value;
+                if ((value = state.yt + state.Hyt) > maxY) maxY = value;
+            }
+            /* 计算该区域积分图 */
+            Image<Gray, double>[] integralImages;
+            CalcEOHIntegralImage(image, minX, minY, maxX, maxY, out integralImages);
+            for (int i = 0; i < states.Length; ++i)
+            {
+                double[] particleModel = new double[BIN_NUM];
+                double rho;
+                /* 计算粒子模型 */
+                CalcModel(integralImages, states[i].xt, states[i].yt, states[i].Hxt, states[i].Hyt, particleModel);
+                /* 计算距离 */
+                rho = CalcBhattacharyya(particleModel, targetModel);
+                /* 计算权重 */
+                weights[i] = CalcWeightedPi(rho);
+            }
+        }
+
+        public override int ModelUpdate(Image<Bgr, byte> image, ref SpaceState estState)
+        {
+            double[] estHist;
+            double rho, Pi_E;
+
+            estHist = new double[BIN_NUM];
+
+            /* (1)在估计值处计算目标直方图 */
+            CalcColorHistogram(image, estState.xt, estState.yt, estState.Hxt, estState.Hyt, estHist);
+            /* (2)计算Bhattacharyya系数 */
+            rho = CalcBhattacharyya(estHist, modelHist);
+            /* (3)计算概率权重 */
+            Pi_E = CalcWeightedPi(rho);
+
+            if (Pi_E > Pi_Thres)
+            {
+                for (int i = 0; i < BIN_NUM; i++)
+                {
+                    modelHist[i] = ((1.0 - ALPHA_COEFFICIENT) * modelHist[i] + ALPHA_COEFFICIENT * estHist[i]);
+                }
+                return 1;
+            }
+
+            return -1;
+        }
+
+        private void CalcModel(Image<Gray, double>[] integralImages, int x0, int y0, int wx, int hy, double[] model)
+        {
+            int x, y, x_1, y_1;
+            for (int i = 0; i < BIN_NUM; ++i)
+            {
+                /* four table-ups */
+                var integral = integralImages[i];
+                x = x0 + wx;
+                y = y0 + hy;
+                x_1 = x0 - wx;
+                y_1 = y0 - hy;
+                var em = integral[y, x].Intensity - integral[y - 1, x].Intensity - integral[y, x - 1].Intensity +
+                    integral[y_1, x_1].Intensity;
+                model[i] = em / ((wx << 2) * (hy << 2));
+            }
+        }
+
+        private void CalcEOHIntegralImage(Image<Bgr, byte> image, int x0, int y0, int x1, int y1, 
+            out Image<Gray, double>[] integralImages)
+        {
+            integralImages = null;
+            /* 计算实际高宽和区域起始点 */
+            int x_begin = x0;
+            int y_begin = y0;
+            if (x_begin < 0) x_begin = 0;
+            if (y_begin < 0) y_begin = 0;
+            int x_end = x1;
+            int y_end = y1;
+            if (x_end >= image.Width) x_end = image.Width - 1;
+            if (y_end >= image.Height) y_end = image.Height - 1;
+            int width = x_end - x_begin;
+            int height = y_end - y_begin;
+            if (width <= 0 || height <= 0) return;
+            /* 取出实际需要计算的子图，并转为灰度图 */
+            var subImage = image.GetSubRect(new Rectangle(x_begin, y_begin, width, height)).Convert<Gray, byte>();
+            /* Convolution */
+            var gx = subImage.Sobel(1, 0, 3);
+            var gy = subImage.Sobel(0, 1, 3);
+            integralImages = new Image<Gray, double>[BIN_NUM];
+            for (int i = 0; i < BIN_NUM; ++i)
+                integralImages[i] = new Image<Gray, double>(subImage.Size);
+
+            double theta, magnitude;
+            for (int y = 0; y < subImage.Height; ++y)
+            {
+                for (int x = 0; x < subImage.Width; ++x)
+                {
+                    theta = Math.Atan2(gy[y, x].Intensity, gx[y, x].Intensity); /* range(-pi,+pi]*/
+                    theta += Math.PI; /* trun to range(0, +2pi] */
+                    int bin_num = ((int)(theta * BIN_NUM / Math.PI + 0.5) - 1);
+                    magnitude = Math.Sqrt(gx[y, x].Intensity * gx[y, x].Intensity +
+                                          gy[y, x].Intensity * gy[y, x].Intensity);
+                    integralImages[bin_num].Data[y, x, 0] = magnitude;
+                }
+            }
+
+            for (int i = 0; i < BIN_NUM; ++i)
+                integralImages[i] = integralImages[i].Integral();
+        }
+    }
+}
